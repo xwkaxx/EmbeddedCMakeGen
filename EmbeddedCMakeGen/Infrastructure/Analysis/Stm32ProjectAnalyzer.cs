@@ -6,10 +6,12 @@ namespace EmbeddedCMakeGen.Infrastructure.Analysis;
 
 public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
 {
-    private static readonly Regex StartupRegex = new(@"startup_stm32.*\.s$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex SystemRegex = new(@"system_stm32.*\.c$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex StartupRegex = new(@"(^|/)startup_stm32.*\.(s|S)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex SystemRegex = new(@"(^|/)system_stm32.*\.c$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex Stm32HeaderRegex = new(@"(^|/)stm32.*\.h$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-    private static readonly Regex HalConfRegex = new(@"stm32.*_hal_conf\.h$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex HalConfRegex = new(@"(^|/)stm32.*_hal_conf\.h$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex LinkerFlashRegex = new(@"(^|/)STM32.*_FLASH\.ld$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ChipTokenRegex = new(@"STM32[A-Z0-9]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public int Priority => 100;
 
@@ -65,8 +67,19 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
     public ProjectModel Analyze(ScanResult scanResult, UserProjectOptions? userOptions = null)
     {
         var projectName = ResolveProjectName(scanResult, userOptions);
+        var startupSources = ResolveStartupSources(scanResult, userOptions);
+        var selectedStartup = startupSources.FirstOrDefault();
+        var selectedLinker = ResolveLinkerScript(scanResult, userOptions);
+
+        var chipMacro = userOptions?.ChipMacroOverride
+                        ?? InferChipMacro(startupSources, scanResult.HeaderFiles, scanResult.LinkerScripts);
+        var useHalDriver = userOptions?.UseHalDriverOverride ?? InferUseHalDriver(scanResult);
+
         var includeDirectories = ResolveIncludeDirectories(scanResult, userOptions);
-        var compileDefinitions = ResolveCompileDefinitions(scanResult, userOptions);
+        var driverSources = ResolveDriverSources(scanResult);
+        var middlewareSources = ResolveMiddlewareSources(scanResult);
+        var applicationSources = ResolveApplicationSources(scanResult, startupSources, driverSources, middlewareSources);
+        var compileDefinitions = ResolveCompileDefinitions(scanResult, userOptions, chipMacro, useHalDriver);
 
         return new ProjectModel(
             projectName: projectName,
@@ -75,11 +88,29 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
             sourceFiles: scanResult.CSourceFiles,
             asmFiles: scanResult.AssemblyFiles,
             includeDirectories: includeDirectories,
-            linkerScript: userOptions?.LinkerScriptPath ?? scanResult.LinkerScripts.FirstOrDefault(),
+            linkerScript: selectedLinker,
             compileDefinitions: compileDefinitions,
             compileOptions: ResolveCompileOptions(userOptions),
             linkOptions: ResolveLinkOptions(userOptions),
-            toolchainFile: userOptions?.ToolchainFilePath);
+            toolchainFile: userOptions?.ToolchainFilePath ?? "cmake/gcc-arm-none-eabi.cmake",
+            chipMacro: chipMacro,
+            useHalDriver: useHalDriver,
+            platformFamily: InferPlatformFamily(chipMacro),
+            platformSeries: InferPlatformSeries(chipMacro),
+            applicationSources: applicationSources,
+            driverSources: driverSources,
+            middlewareSources: middlewareSources,
+            startupSources: startupSources,
+            linkDirectories: userOptions?.LinkDirectoriesOverride ?? [],
+            linkedLibraries: userOptions?.LinkedLibrariesOverride ?? [],
+            toolchainKind: userOptions?.ToolchainKindOverride ?? "gcc-arm-none-eabi",
+            supportedBuildTypes: userOptions?.SupportedBuildTypesOverride ?? ["Debug", "Release"],
+            presetGenerator: userOptions?.PresetGeneratorOverride ?? "Ninja",
+            cmakeModuleStyle: "stm32cubemx",
+            platformModuleRelativePath: "cmake/stm32cubemx",
+            selectedAnalyzerName: nameof(Stm32ProjectAnalyzer),
+            selectedStartupFile: selectedStartup,
+            selectedLinkerScript: selectedLinker);
     }
 
     private static string ResolveProjectName(ScanResult scanResult, UserProjectOptions? userOptions)
@@ -88,36 +119,169 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
         return userOptions?.ProjectNameOverride ?? fallbackName;
     }
 
-    private static IReadOnlyList<string> ResolveIncludeDirectories(ScanResult scanResult, UserProjectOptions? userOptions)
+    private static IReadOnlyList<string> ResolveStartupSources(ScanResult scanResult, UserProjectOptions? userOptions)
     {
-        if (userOptions?.IncludeDirectoriesOverride is { Count: > 0 })
+        if (!string.IsNullOrWhiteSpace(userOptions?.StartupFilePath))
         {
-            return userOptions.IncludeDirectoriesOverride;
+            return [Normalize(userOptions.StartupFilePath)];
         }
 
-        return scanResult.Directories
-            .Where(path => !string.IsNullOrWhiteSpace(path))
+        var startupCandidates = scanResult.AssemblyFiles
+            .Where(path => StartupRegex.IsMatch(path))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+
+        if (startupCandidates.Length > 0)
+        {
+            return [startupCandidates[0]];
+        }
+
+        return scanResult.AssemblyFiles
             .Distinct(StringComparer.Ordinal)
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
     }
 
-    private IReadOnlyList<string> ResolveCompileDefinitions(ScanResult scanResult, UserProjectOptions? userOptions)
+    private static string? ResolveLinkerScript(ScanResult scanResult, UserProjectOptions? userOptions)
+    {
+        if (!string.IsNullOrWhiteSpace(userOptions?.LinkerScriptPath))
+        {
+            return Normalize(userOptions.LinkerScriptPath);
+        }
+
+        var preferred = scanResult.LinkerScripts
+            .Where(path => LinkerFlashRegex.IsMatch(path))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        return preferred
+               ?? scanResult.LinkerScripts
+                   .OrderBy(path => path, StringComparer.Ordinal)
+                   .FirstOrDefault();
+    }
+
+    private static IReadOnlyList<string> ResolveIncludeDirectories(ScanResult scanResult, UserProjectOptions? userOptions)
+    {
+        if (userOptions?.IncludeDirectoriesOverride is { Count: > 0 })
+        {
+            return userOptions.IncludeDirectoriesOverride
+                .Select(Normalize)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+        }
+
+        var includeDirectories = new List<string>();
+
+        AddIfExists(scanResult, includeDirectories, "Core/Inc");
+        AddFirstMatchingPath(scanResult, includeDirectories, path => path.Contains("/STM32", StringComparison.OrdinalIgnoreCase)
+                                                                && path.Contains("HAL_Driver/Inc", StringComparison.OrdinalIgnoreCase));
+        AddFirstMatchingPath(scanResult, includeDirectories, path => path.Contains("HAL_Driver/Inc/Legacy", StringComparison.OrdinalIgnoreCase));
+        AddFirstMatchingPath(scanResult, includeDirectories, path => path.Contains("Drivers/CMSIS/Device/ST", StringComparison.OrdinalIgnoreCase)
+                                                                && path.EndsWith("/Include", StringComparison.OrdinalIgnoreCase));
+        AddIfExists(scanResult, includeDirectories, "Drivers/CMSIS/Include");
+
+        includeDirectories.AddRange(scanResult.Directories.Where(IsApplicationIncludeDirectory));
+
+        return includeDirectories
+            .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> ResolveApplicationSources(
+        ScanResult scanResult,
+        IReadOnlyList<string> startupSources,
+        IReadOnlyList<string> driverSources,
+        IReadOnlyList<string> middlewareSources)
+    {
+        var excluded = new HashSet<string>(driverSources.Concat(middlewareSources), StringComparer.Ordinal);
+        var appDirMarkers = new[] { "/app/", "/application/", "/bldc/", "/kernel/", "/motor/" };
+
+        var result = scanResult.CSourceFiles
+            .Where(path => !excluded.Contains(path))
+            .Where(path => path.StartsWith("Core/Src/", StringComparison.OrdinalIgnoreCase)
+                           || appDirMarkers.Any(marker => path.Contains(marker, StringComparison.OrdinalIgnoreCase)))
+            .Concat(startupSources)
+            .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+
+        if (result.Length > 0)
+        {
+            return result;
+        }
+
+        return scanResult.CSourceFiles
+            .Where(path => !excluded.Contains(path))
+            .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> ResolveDriverSources(ScanResult scanResult)
+    {
+        return scanResult.CSourceFiles
+            .Where(path => SystemRegex.IsMatch(path)
+                           || path.Contains("/STM32", StringComparison.OrdinalIgnoreCase)
+                           && path.Contains("HAL_Driver/Src/", StringComparison.OrdinalIgnoreCase))
+            .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> ResolveMiddlewareSources(ScanResult scanResult)
+    {
+        return scanResult.CSourceFiles
+            .Where(path => path.StartsWith("Middlewares/", StringComparison.OrdinalIgnoreCase)
+                           || path.Contains("/Middlewares/", StringComparison.OrdinalIgnoreCase))
+            .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private IReadOnlyList<string> ResolveCompileDefinitions(
+        ScanResult scanResult,
+        UserProjectOptions? userOptions,
+        string? chipMacro,
+        bool useHalDriver)
     {
         if (userOptions?.CompileDefinitionsOverride is { Count: > 0 })
         {
-            return userOptions.CompileDefinitionsOverride;
+            return userOptions.CompileDefinitionsOverride
+                .Select(Normalize)
+                .Distinct(StringComparer.Ordinal)
+                .OrderBy(value => value, StringComparer.Ordinal)
+                .ToArray();
         }
 
-        if (userOptions?.IncludeCommonStm32Definitions != true)
+        var definitions = new List<string>();
+
+        if (useHalDriver)
         {
-            return [];
+            definitions.Add("USE_HAL_DRIVER");
         }
 
-        var match = Match(scanResult);
-        var includeHalDefinition = match.Confidence >= 40 && scanResult.HeaderFiles.Any(path => HalConfRegex.IsMatch(path));
+        if (!string.IsNullOrWhiteSpace(chipMacro))
+        {
+            definitions.Add(chipMacro);
+        }
 
-        return includeHalDefinition ? ["USE_HAL_DRIVER"] : [];
+        if (scanResult.RootPath.Contains("debug", StringComparison.OrdinalIgnoreCase))
+        {
+            definitions.Add("DEBUG");
+        }
+
+        return definitions
+            .Select(Normalize)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static IReadOnlyList<string> ResolveCompileOptions(UserProjectOptions? userOptions)
@@ -146,6 +310,96 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
         return [];
     }
 
+    private static bool InferUseHalDriver(ScanResult scanResult)
+    {
+        return ContainsHalDriverPath(scanResult)
+               || scanResult.HeaderFiles.Any(path => HalConfRegex.IsMatch(path));
+    }
+
+    private static string? InferChipMacro(
+        IReadOnlyList<string> startupSources,
+        IReadOnlyList<string> headerFiles,
+        IReadOnlyList<string> linkerScripts)
+    {
+        var candidates = startupSources.Concat(headerFiles).Concat(linkerScripts)
+            .Select(TryExtractChipMacro)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .ToArray();
+
+        return candidates
+            .Select(value => value!)
+            .GroupBy(value => value, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(group => group.Count())
+            .ThenBy(group => group.Key, StringComparer.Ordinal)
+            .Select(group => group.Key.ToUpperInvariant())
+            .FirstOrDefault();
+    }
+
+    private static string? TryExtractChipMacro(string path)
+    {
+        var match = ChipTokenRegex.Match(path);
+        return match.Success ? match.Value.ToUpperInvariant() : null;
+    }
+
+    private static string? InferPlatformFamily(string? chipMacro)
+    {
+        if (string.IsNullOrWhiteSpace(chipMacro) || chipMacro!.Length < 7)
+        {
+            return null;
+        }
+
+        return chipMacro[..7];
+    }
+
+    private static string? InferPlatformSeries(string? chipMacro)
+    {
+        var family = InferPlatformFamily(chipMacro);
+        if (family is null || family.Length < 7)
+        {
+            return null;
+        }
+
+        return family[5..7];
+    }
+
+    private static void AddIfExists(ScanResult scanResult, ICollection<string> includes, string path)
+    {
+        var normalized = Normalize(path);
+        if (scanResult.Directories.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        {
+            includes.Add(normalized);
+        }
+    }
+
+    private static void AddFirstMatchingPath(ScanResult scanResult, ICollection<string> includes, Func<string, bool> predicate)
+    {
+        var match = scanResult.Directories
+            .Where(predicate)
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        if (!string.IsNullOrWhiteSpace(match))
+        {
+            includes.Add(match);
+        }
+    }
+
+    private static bool IsApplicationIncludeDirectory(string path)
+    {
+        return path.EndsWith("/Inc", StringComparison.OrdinalIgnoreCase)
+               && (path.StartsWith("Core/", StringComparison.OrdinalIgnoreCase)
+                   || path.Contains("/App", StringComparison.OrdinalIgnoreCase)
+                   || path.Contains("/Application", StringComparison.OrdinalIgnoreCase)
+                   || path.Contains("/BLDC", StringComparison.OrdinalIgnoreCase)
+                   || path.Contains("/Kernel", StringComparison.OrdinalIgnoreCase)
+                   || path.Contains("/Motor", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string Normalize(string path)
+    {
+        return path.Replace('\\', '/').Trim();
+    }
+
     private static bool ContainsPath(ScanResult scanResult, string pathPart)
     {
         return scanResult.Directories.Any(path => path.Contains(pathPart, StringComparison.OrdinalIgnoreCase))
@@ -159,16 +413,16 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
         const string marker = "drivers/stm32";
         const string suffix = "hal_driver";
 
-        bool IsHalPath(string path)
+        static bool IsHalPath(string path, string markerValue, string suffixValue)
         {
             var normalized = path.Replace('\\', '/');
-            var markerIndex = normalized.IndexOf(marker, StringComparison.OrdinalIgnoreCase);
+            var markerIndex = normalized.IndexOf(markerValue, StringComparison.OrdinalIgnoreCase);
             return markerIndex >= 0
-                   && normalized.IndexOf(suffix, markerIndex, StringComparison.OrdinalIgnoreCase) >= 0;
+                   && normalized.IndexOf(suffixValue, markerIndex, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        return scanResult.Directories.Any(IsHalPath)
-               || scanResult.CSourceFiles.Any(IsHalPath)
-               || scanResult.HeaderFiles.Any(IsHalPath);
+        return scanResult.Directories.Any(path => IsHalPath(path, marker, suffix))
+               || scanResult.CSourceFiles.Any(path => IsHalPath(path, marker, suffix))
+               || scanResult.HeaderFiles.Any(path => IsHalPath(path, marker, suffix));
     }
 }

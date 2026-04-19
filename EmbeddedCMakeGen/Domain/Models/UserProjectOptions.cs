@@ -10,7 +10,15 @@ public sealed class UserProjectOptions
 
     public string? ToolchainFilePath { get; init; }
 
+    public string? ToolchainKindOverride { get; init; }
+
     public string? LinkerScriptPath { get; init; }
+
+    public string? StartupFilePath { get; init; }
+
+    public string? ChipMacroOverride { get; init; }
+
+    public bool? UseHalDriverOverride { get; init; }
 
     public IReadOnlyList<string>? IncludeDirectoriesOverride { get; init; }
 
@@ -19,6 +27,14 @@ public sealed class UserProjectOptions
     public IReadOnlyList<string>? CompileOptionsOverride { get; init; }
 
     public IReadOnlyList<string>? LinkOptionsOverride { get; init; }
+
+    public IReadOnlyList<string>? LinkDirectoriesOverride { get; init; }
+
+    public IReadOnlyList<string>? LinkedLibrariesOverride { get; init; }
+
+    public IReadOnlyList<string>? SupportedBuildTypesOverride { get; init; }
+
+    public string? PresetGeneratorOverride { get; init; }
 
     public bool IncludeCommonStm32Definitions { get; init; }
 

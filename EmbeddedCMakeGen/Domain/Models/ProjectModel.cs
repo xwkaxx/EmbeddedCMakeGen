@@ -4,33 +4,49 @@ public sealed class ProjectModel
 {
     public ProjectModel(
         string projectName,
-        PlatformKind platform,
-        IReadOnlyList<string>? cSourceFiles = null,
-        IReadOnlyList<string>? headerFiles = null,
-        IReadOnlyList<string>? assemblyFiles = null,
+        string targetName,
+        PlatformKind platformKind,
+        IReadOnlyList<string>? sourceFiles = null,
+        IReadOnlyList<string>? asmFiles = null,
+        IReadOnlyList<string>? includeDirectories = null,
         string? linkerScript = null,
-        UserProjectOptions? userOptions = null)
+        IReadOnlyList<string>? compileDefinitions = null,
+        IReadOnlyList<string>? compileOptions = null,
+        IReadOnlyList<string>? linkOptions = null,
+        string? toolchainFile = null)
     {
         ProjectName = projectName;
-        Platform = platform;
-        CSourceFiles = cSourceFiles ?? [];
-        HeaderFiles = headerFiles ?? [];
-        AssemblyFiles = assemblyFiles ?? [];
+        TargetName = targetName;
+        PlatformKind = platformKind;
+        SourceFiles = sourceFiles ?? [];
+        AsmFiles = asmFiles ?? [];
+        IncludeDirectories = includeDirectories ?? [];
         LinkerScript = linkerScript;
-        UserOptions = userOptions ?? new UserProjectOptions();
+        CompileDefinitions = compileDefinitions ?? [];
+        CompileOptions = compileOptions ?? [];
+        LinkOptions = linkOptions ?? [];
+        ToolchainFile = toolchainFile;
     }
 
     public string ProjectName { get; }
 
-    public PlatformKind Platform { get; }
+    public string TargetName { get; }
 
-    public IReadOnlyList<string> CSourceFiles { get; }
+    public PlatformKind PlatformKind { get; }
 
-    public IReadOnlyList<string> HeaderFiles { get; }
+    public IReadOnlyList<string> SourceFiles { get; }
 
-    public IReadOnlyList<string> AssemblyFiles { get; }
+    public IReadOnlyList<string> AsmFiles { get; }
+
+    public IReadOnlyList<string> IncludeDirectories { get; }
 
     public string? LinkerScript { get; }
 
-    public UserProjectOptions UserOptions { get; }
+    public IReadOnlyList<string> CompileDefinitions { get; }
+
+    public IReadOnlyList<string> CompileOptions { get; }
+
+    public IReadOnlyList<string> LinkOptions { get; }
+
+    public string? ToolchainFile { get; }
 }

@@ -16,11 +16,17 @@ public sealed class CommandDispatcher
 
         try
         {
+            if (IsHelpRequest(args))
+            {
+                PrintHelp(logger);
+                return 0;
+            }
+
             var command = ParsedCommand.Parse(args);
             if (!command.IsValid)
             {
-                logger.Info(command.ValidationMessage ?? ParsedCommand.UsageText);
-                logger.Info(ParsedCommand.UsageText);
+                logger.Info(command.ValidationMessage ?? "Invalid command.");
+                PrintHelp(logger);
                 return 1;
             }
 
@@ -72,6 +78,27 @@ public sealed class CommandDispatcher
             logger.Error(ex.Message);
             return 1;
         }
+    }
+
+    private static bool IsHelpRequest(string[] args)
+    {
+        return args.Length == 1 &&
+               (args[0].Equals("--help", StringComparison.OrdinalIgnoreCase) ||
+                args[0].Equals("-h", StringComparison.OrdinalIgnoreCase) ||
+                args[0].Equals("help", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void PrintHelp(ILogger logger)
+    {
+        logger.Info("EmbeddedCMakeGen V1");
+        logger.Info("STM32 CMake Environment Generator");
+        logger.Info(string.Empty);
+        logger.Info(ParsedCommand.UsageText);
+        logger.Info(string.Empty);
+        logger.Info("Examples:");
+        logger.Info("  EmbeddedCMakeGen scan --root .");
+        logger.Info("  EmbeddedCMakeGen preview --root . --out ./regen");
+        logger.Info("  EmbeddedCMakeGen generate --root . --out . --backup");
     }
 
     private static UserProjectOptions BuildUserOptions(ParsedCommand command)
@@ -135,7 +162,7 @@ public sealed class CommandDispatcher
         string? Linker,
         bool CreateBackup)
     {
-        public const string UsageText = "Usage: EmbeddedCMakeGen <scan|preview|generate> --root <projectRoot> [--out <outputDir>] [--project-name <name>] [--target-name <name>] [--platform <stm32|generic>] [--chip <chipId>] [--startup <path>] [--linker <path>] [--backup]";
+        public const string UsageText = "Usage: EmbeddedCMakeGen <scan|preview|generate> --root <projectRoot> [--out <outputDir>] [--project-name <name>] [--target-name <name>] [--platform <stm32|generic>] [--chip <chipId>] [--startup <path>] [--linker <path>] [--backup] [--help]";
 
         public static ParsedCommand Parse(string[] args)
         {

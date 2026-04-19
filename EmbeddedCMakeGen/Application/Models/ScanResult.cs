@@ -1,5 +1,6 @@
 namespace EmbeddedCMakeGen.Application.Models;
 
-public sealed class ScanResult
+// Reserved for future application-layer view models.
+internal static class ScanResultPlaceholder
 {
 }

@@ -368,21 +368,64 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
         var candidates = startupSources.Concat(headerFiles).Concat(linkerScripts)
             .Select(TryExtractChipMacro)
             .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!)
             .ToArray();
 
+        if (candidates.Length == 0)
+        {
+            return null;
+        }
+
         return candidates
-            .Select(value => value!)
             .GroupBy(value => value, StringComparer.OrdinalIgnoreCase)
-            .OrderByDescending(group => group.Count())
-            .ThenBy(group => group.Key, StringComparer.Ordinal)
-            .Select(group => group.Key.ToUpperInvariant())
+            .Select(group => new
+            {
+                Macro = CanonicalizeChipMacro(group.Key),
+                Frequency = group.Count()
+            })
+            .OrderByDescending(entry => entry.Frequency)
+            .ThenByDescending(entry => GetChipSpecificityScore(entry.Macro))
+            .ThenByDescending(entry => entry.Macro.Length)
+            .ThenBy(entry => entry.Macro, StringComparer.Ordinal)
+            .Select(entry => entry.Macro)
             .FirstOrDefault();
     }
 
     private static string? TryExtractChipMacro(string path)
     {
         var match = ChipTokenRegex.Match(path);
-        return match.Success ? match.Value.ToUpperInvariant() : null;
+        return match.Success ? match.Value : null;
+    }
+
+    private static string CanonicalizeChipMacro(string value)
+    {
+        var normalized = value.Trim().ToUpperInvariant();
+        return normalized.EndsWith("XX", StringComparison.Ordinal)
+            ? $"{normalized[..^2]}xx"
+            : normalized;
+    }
+
+    private static int GetChipSpecificityScore(string chipMacro)
+    {
+        if (chipMacro.Length < 9 || !chipMacro.StartsWith("STM32", StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        var suffix = chipMacro[7..];
+        var score = suffix.Count(char.IsDigit) * 10;
+
+        if (!suffix.StartsWith("XX", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 5;
+        }
+
+        if (!suffix.EndsWith("XX", StringComparison.OrdinalIgnoreCase))
+        {
+            score += 3;
+        }
+
+        return score;
     }
 
     private static string? InferPlatformFamily(string? chipMacro)

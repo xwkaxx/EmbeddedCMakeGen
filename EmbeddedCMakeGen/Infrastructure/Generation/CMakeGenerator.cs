@@ -108,6 +108,12 @@ add_executable({{target}})
 
 add_subdirectory(cmake/stm32cubemx)
 
+add_custom_command(TARGET {{target}} POST_BUILD
+    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:{{target}}> $<TARGET_FILE_DIR:{{target}}>/{{target}}.hex
+    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:{{target}}> $<TARGET_FILE_DIR:{{target}}>/{{target}}.bin
+    COMMENT "Generating HEX and BIN artifacts"
+)
+
 # USER CODE BEGIN TargetLink
 # target_link_libraries({{target}} PRIVATE)
 # USER CODE END TargetLink
@@ -196,14 +202,6 @@ add_subdirectory(cmake/stm32cubemx)
         builder.AppendLine("endif()");
         builder.AppendLine();
         builder.AppendLine($"set_target_properties({target} PROPERTIES SUFFIX \".elf\")");
-        builder.AppendLine();
-        builder.AppendLine($"add_custom_command(TARGET {target} POST_BUILD");
-        builder.AppendLine("    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:" + target + "> $<TARGET_FILE_DIR:" + target + ">/"
-            + target + ".hex");
-        builder.AppendLine("    COMMAND ${CMAKE_OBJCOPY} -O binary $<TARGET_FILE:" + target + "> $<TARGET_FILE_DIR:" + target + ">/"
-            + target + ".bin");
-        builder.AppendLine("    COMMENT \"Generating HEX and BIN artifacts\"");
-        builder.AppendLine(")");
 
         return builder.ToString();
     }

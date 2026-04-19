@@ -5,7 +5,8 @@ namespace EmbeddedCMakeGen.Infrastructure.Generation;
 
 public sealed class CMakeGenerator : ICMakeGenerator
 {
-    public void Generate(ProjectModel projectModel, string outputRootPath)
+    public GeneratedProjectFiles Generate(ProjectModel projectModel)
     {
+        return GeneratedProjectFiles.Empty;
     }
 }

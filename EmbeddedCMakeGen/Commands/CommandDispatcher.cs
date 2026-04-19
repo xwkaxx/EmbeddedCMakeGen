@@ -61,7 +61,7 @@ public sealed class CommandDispatcher
         {
             if (args.Length == 0)
             {
-                return new ParsedCommand(false, null, null, previewOnly: true, createBackup: false);
+                return new ParsedCommand(false, null, null, PreviewOnly: true, CreateBackup: false);
             }
 
             string? root = null;
@@ -90,13 +90,13 @@ public sealed class CommandDispatcher
                         createBackup = true;
                         break;
                     default:
-                        return new ParsedCommand(false, null, null, previewOnly: true, createBackup: false);
+                        return new ParsedCommand(false, null, null, PreviewOnly: true, CreateBackup: false);
                 }
             }
 
             if (string.IsNullOrWhiteSpace(root))
             {
-                return new ParsedCommand(false, null, null, previewOnly: true, createBackup: false);
+                return new ParsedCommand(false, null, null, PreviewOnly: true, CreateBackup: false);
             }
 
             return new ParsedCommand(true, root, output, previewOnly, createBackup);

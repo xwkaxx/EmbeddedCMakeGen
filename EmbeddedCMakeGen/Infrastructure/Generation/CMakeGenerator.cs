@@ -161,14 +161,14 @@ add_subdirectory(cmake/stm32cubemx)
         builder.AppendLine("target_link_libraries(stm32cubemx_drivers PUBLIC stm32cubemx_common)");
         builder.AppendLine("target_compile_options(stm32cubemx_drivers PRIVATE ${EMBEDDED_COMPILE_OPTIONS})");
         builder.AppendLine();
-        builder.AppendLine($"target_sources({target} PRIVATE ${EMBEDDED_APP_SOURCES} ${EMBEDDED_STARTUP_SOURCES} $<TARGET_OBJECTS:stm32cubemx_drivers>)");
-        builder.AppendLine($"target_link_libraries({target} PRIVATE stm32cubemx_common ${EMBEDDED_LINKED_LIBRARIES})");
-        builder.AppendLine($"target_compile_options({target} PRIVATE ${EMBEDDED_COMPILE_OPTIONS})");
-        builder.AppendLine($"target_link_directories({target} PRIVATE ${EMBEDDED_LINK_DIRECTORIES})");
-        builder.AppendLine($"target_link_options({target} PRIVATE ${EMBEDDED_LINK_OPTIONS})");
+        builder.AppendLine($"target_sources({target} PRIVATE ${{EMBEDDED_APP_SOURCES}} ${{EMBEDDED_STARTUP_SOURCES}} $<TARGET_OBJECTS:stm32cubemx_drivers>)");
+        builder.AppendLine($"target_link_libraries({target} PRIVATE stm32cubemx_common ${{EMBEDDED_LINKED_LIBRARIES}})");
+        builder.AppendLine($"target_compile_options({target} PRIVATE ${{EMBEDDED_COMPILE_OPTIONS}})");
+        builder.AppendLine($"target_link_directories({target} PRIVATE ${{EMBEDDED_LINK_DIRECTORIES}})");
+        builder.AppendLine($"target_link_options({target} PRIVATE ${{EMBEDDED_LINK_OPTIONS}})");
         builder.AppendLine();
         builder.AppendLine("if(EMBEDDED_LINKER_SCRIPT)");
-        builder.AppendLine($"    target_link_options({target} PRIVATE \"-T${EMBEDDED_LINKER_SCRIPT}\")");
+        builder.AppendLine($"    target_link_options({target} PRIVATE \"-T${{EMBEDDED_LINKER_SCRIPT}}\")");
         builder.AppendLine("endif()");
 
         return builder.ToString();

@@ -80,6 +80,7 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
         var middlewareSources = ResolveMiddlewareSources(scanResult);
         var applicationSources = ResolveApplicationSources(scanResult, startupSources, driverSources, middlewareSources);
         var compileDefinitions = ResolveCompileDefinitions(scanResult, userOptions, chipMacro, useHalDriver);
+        var (targetCompileOptions, targetLinkOptions) = ResolveTargetFlags(userOptions, chipMacro);
 
         return new ProjectModel(
             projectName: projectName,
@@ -90,8 +91,8 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
             includeDirectories: includeDirectories,
             linkerScript: selectedLinker,
             compileDefinitions: compileDefinitions,
-            compileOptions: ResolveCompileOptions(userOptions),
-            linkOptions: ResolveLinkOptions(userOptions),
+            compileOptions: targetCompileOptions,
+            linkOptions: targetLinkOptions,
             toolchainFile: userOptions?.ToolchainFilePath ?? "cmake/gcc-arm-none-eabi.cmake",
             chipMacro: chipMacro,
             useHalDriver: useHalDriver,
@@ -300,6 +301,43 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
         return options;
     }
 
+    private static (IReadOnlyList<string> compileOptions, IReadOnlyList<string> linkOptions) ResolveTargetFlags(
+        UserProjectOptions? userOptions,
+        string? chipMacro)
+    {
+        var compileOptions = ResolveCompileOptions(userOptions).ToList();
+        var linkOptions = ResolveLinkOptions(userOptions).ToList();
+        var mcuFlags = ResolveMcuFlags(chipMacro);
+
+        foreach (var flag in mcuFlags)
+        {
+            if (!compileOptions.Contains(flag, StringComparer.Ordinal))
+            {
+                compileOptions.Add(flag);
+            }
+
+            if (!linkOptions.Contains(flag, StringComparer.Ordinal))
+            {
+                linkOptions.Add(flag);
+            }
+        }
+
+        return (SortDistinct(compileOptions), SortDistinct(linkOptions));
+    }
+
+    private static IReadOnlyList<string> ResolveMcuFlags(string? chipMacro)
+    {
+        var options = new List<string> { "-mcpu=cortex-m4", "-mthumb" };
+
+        if (chipMacro?.StartsWith("STM32G4", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            options.Add("-mfpu=fpv4-sp-d16");
+            options.Add("-mfloat-abi=hard");
+        }
+
+        return SortDistinct(options);
+    }
+
     private static IReadOnlyList<string> ResolveLinkOptions(UserProjectOptions? userOptions)
     {
         if (userOptions?.LinkOptionsOverride is { Count: > 0 })
@@ -308,6 +346,15 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
         }
 
         return [];
+    }
+
+    private static IReadOnlyList<string> SortDistinct(IEnumerable<string> values)
+    {
+        return values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
     }
 
     private static bool InferUseHalDriver(ScanResult scanResult)

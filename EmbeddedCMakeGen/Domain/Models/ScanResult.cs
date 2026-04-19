@@ -4,12 +4,14 @@ public sealed class ScanResult
 {
     public ScanResult(
         string rootPath,
+        IReadOnlyList<string>? directories = null,
         IReadOnlyList<string>? cSourceFiles = null,
         IReadOnlyList<string>? headerFiles = null,
         IReadOnlyList<string>? assemblyFiles = null,
         IReadOnlyList<string>? linkerScripts = null)
     {
         RootPath = rootPath;
+        Directories = directories ?? [];
         CSourceFiles = cSourceFiles ?? [];
         HeaderFiles = headerFiles ?? [];
         AssemblyFiles = assemblyFiles ?? [];
@@ -17,6 +19,8 @@ public sealed class ScanResult
     }
 
     public string RootPath { get; }
+
+    public IReadOnlyList<string> Directories { get; }
 
     public IReadOnlyList<string> CSourceFiles { get; }
 

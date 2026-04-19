@@ -273,10 +273,7 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
             definitions.Add(chipMacro);
         }
 
-        if (scanResult.RootPath.Contains("debug", StringComparison.OrdinalIgnoreCase))
-        {
-            definitions.Add("DEBUG");
-        }
+        definitions.Add("$<$<CONFIG:Debug>:DEBUG>");
 
         return definitions
             .Select(Normalize)

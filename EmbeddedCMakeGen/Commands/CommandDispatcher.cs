@@ -44,7 +44,6 @@ public sealed class CommandDispatcher
             var analyzer = selector.SelectBestAnalyzer(scanResult);
             var userOptions = BuildUserOptions(command);
             var projectModel = analyzer.Analyze(scanResult, userOptions);
-            projectModel = ApplyPostAnalysisOverrides(projectModel, command);
 
             ICMakeGenerator generator = new CMakeGenerator();
             var generatedFiles = generator.Generate(projectModel);
@@ -52,8 +51,11 @@ public sealed class CommandDispatcher
             IGeneratedFileWriter writer = new GeneratedFileWriter(logger, new FileBackupService(), new AtomicFileReplaceService());
             var outputRoot = Path.GetFullPath(command.OutputPath ?? rootPath);
 
-            logger.Info($"Analyzer: {analyzer.GetType().Name}");
+            logger.Info($"Analyzer: {projectModel.SelectedAnalyzerName ?? analyzer.GetType().Name}");
             logger.Info($"Mode: {(command.CommandName == CommandName.Preview ? "preview" : "generate")}");
+            logger.Info($"Selected startup: {projectModel.SelectedStartupFile ?? "(none)"}");
+            logger.Info($"Selected linker: {projectModel.SelectedLinkerScript ?? "(none)"}");
+            logger.Info($"Items app/driver/middleware/include: {projectModel.ApplicationSources.Count}/{projectModel.DriverSources.Count}/{projectModel.MiddlewareSources.Count}/{projectModel.IncludeDirectories.Count}");
 
             writer.WriteFiles(
                 generatedFiles,
@@ -74,41 +76,15 @@ public sealed class CommandDispatcher
 
     private static UserProjectOptions BuildUserOptions(ParsedCommand command)
     {
-        var compileDefinitions = new List<string>();
-        if (!string.IsNullOrWhiteSpace(command.Chip))
-        {
-            compileDefinitions.Add($"CHIP={command.Chip}");
-        }
-
         return new UserProjectOptions
         {
             PreferredPlatform = ParsePlatform(command.Platform),
             ProjectNameOverride = command.ProjectName,
             TargetNameOverride = command.TargetName,
             LinkerScriptPath = command.Linker,
-            CompileDefinitionsOverride = compileDefinitions.Count > 0 ? compileDefinitions : null
+            StartupFilePath = command.Startup,
+            ChipMacroOverride = command.Chip
         };
-    }
-
-    private static ProjectModel ApplyPostAnalysisOverrides(ProjectModel projectModel, ParsedCommand command)
-    {
-        if (string.IsNullOrWhiteSpace(command.Startup))
-        {
-            return projectModel;
-        }
-
-        return new ProjectModel(
-            projectName: projectModel.ProjectName,
-            targetName: projectModel.TargetName,
-            platformKind: projectModel.PlatformKind,
-            sourceFiles: projectModel.SourceFiles,
-            asmFiles: [command.Startup],
-            includeDirectories: projectModel.IncludeDirectories,
-            linkerScript: projectModel.LinkerScript,
-            compileDefinitions: projectModel.CompileDefinitions,
-            compileOptions: projectModel.CompileOptions,
-            linkOptions: projectModel.LinkOptions,
-            toolchainFile: projectModel.ToolchainFile);
     }
 
     private static PlatformKind? ParsePlatform(string? platform)

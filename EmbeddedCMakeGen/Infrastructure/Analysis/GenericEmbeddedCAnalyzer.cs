@@ -44,6 +44,8 @@ public sealed class GenericEmbeddedCAnalyzer : IProjectAnalyzer
     public ProjectModel Analyze(ScanResult scanResult, UserProjectOptions? userOptions = null)
     {
         var projectName = ResolveProjectName(scanResult, userOptions);
+        var startupSources = ResolveStartupSources(scanResult, userOptions);
+        var linkerScript = userOptions?.LinkerScriptPath ?? scanResult.LinkerScripts.FirstOrDefault();
 
         return new ProjectModel(
             projectName: projectName,
@@ -52,11 +54,31 @@ public sealed class GenericEmbeddedCAnalyzer : IProjectAnalyzer
             sourceFiles: scanResult.CSourceFiles,
             asmFiles: scanResult.AssemblyFiles,
             includeDirectories: ResolveIncludeDirectories(scanResult, userOptions),
-            linkerScript: userOptions?.LinkerScriptPath ?? scanResult.LinkerScripts.FirstOrDefault(),
+            linkerScript: linkerScript,
             compileDefinitions: userOptions?.CompileDefinitionsOverride ?? [],
             compileOptions: ResolveCompileOptions(userOptions),
             linkOptions: userOptions?.LinkOptionsOverride ?? [],
-            toolchainFile: userOptions?.ToolchainFilePath);
+            toolchainFile: userOptions?.ToolchainFilePath,
+            applicationSources: scanResult.CSourceFiles,
+            startupSources: startupSources,
+            selectedAnalyzerName: nameof(GenericEmbeddedCAnalyzer),
+            selectedStartupFile: startupSources.FirstOrDefault(),
+            selectedLinkerScript: linkerScript,
+            toolchainKind: userOptions?.ToolchainKindOverride,
+            supportedBuildTypes: userOptions?.SupportedBuildTypesOverride ?? ["Debug", "Release"],
+            presetGenerator: userOptions?.PresetGeneratorOverride ?? "Ninja",
+            linkDirectories: userOptions?.LinkDirectoriesOverride ?? [],
+            linkedLibraries: userOptions?.LinkedLibrariesOverride ?? []);
+    }
+
+    private static IReadOnlyList<string> ResolveStartupSources(ScanResult scanResult, UserProjectOptions? userOptions)
+    {
+        if (!string.IsNullOrWhiteSpace(userOptions?.StartupFilePath))
+        {
+            return [userOptions.StartupFilePath.Replace('\\', '/')];
+        }
+
+        return scanResult.AssemblyFiles;
     }
 
     private static string ResolveProjectName(ScanResult scanResult, UserProjectOptions? userOptions)

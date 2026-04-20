@@ -146,8 +146,10 @@ endif()
         var linkDirectories = ToPlatformModulePaths(projectModel.LinkDirectories);
         var architectureFlags = ExtractArchitectureFlags(projectModel.CompileOptions, projectModel.LinkOptions);
         var toolchainDefinitions = ExtractToolchainDefinitions(projectModel.CompileDefinitions);
-        var compileDefinitions = projectModel.CompileDefinitions
-            .Where(definition => !toolchainDefinitions.Contains(definition, StringComparer.Ordinal))
+        var nonToolchainDefinitions = ExtractNonToolchainDefinitions(projectModel.CompileDefinitions, toolchainDefinitions);
+        var compileDefinitions = toolchainDefinitions
+            .Concat(nonToolchainDefinitions)
+            .Distinct(StringComparer.Ordinal)
             .ToArray();
         var compileOptions = projectModel.CompileOptions
             .Where(option => !architectureFlags.Contains(option, StringComparer.Ordinal))
@@ -427,6 +429,17 @@ set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
             .Where(definition =>
                 definition.Equals("USE_HAL_DRIVER", StringComparison.Ordinal)
                 || definition.StartsWith("STM32", StringComparison.Ordinal))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<string> ExtractNonToolchainDefinitions(
+        IReadOnlyList<string> compileDefinitions,
+        IReadOnlyList<string> toolchainDefinitions)
+    {
+        return compileDefinitions
+            .Where(definition => !toolchainDefinitions.Contains(definition, StringComparer.Ordinal))
             .Distinct(StringComparer.Ordinal)
             .OrderBy(value => value, StringComparer.Ordinal)
             .ToArray();

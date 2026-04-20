@@ -12,6 +12,7 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
     private static readonly Regex HalConfRegex = new(@"(^|/)stm32.*_hal_conf\.h$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex LinkerFlashRegex = new(@"(^|/)STM32.*_FLASH\.ld$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private static readonly Regex ChipTokenRegex = new(@"STM32[A-Z0-9]+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    private static readonly Regex ConcreteChipRegex = new(@"^STM32[A-Z]\d{3}[A-Z0-9]*$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public int Priority => 100;
 
@@ -81,6 +82,7 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
         var applicationSources = ResolveApplicationSources(scanResult, startupSources, driverSources, middlewareSources);
         var compileDefinitions = ResolveCompileDefinitions(scanResult, userOptions, chipMacro, useHalDriver);
         var (targetCompileOptions, targetLinkOptions) = ResolveTargetFlags(userOptions, chipMacro);
+        var outputArtifacts = ResolveOutputArtifacts(userOptions);
 
         return new ProjectModel(
             projectName: projectName,
@@ -104,6 +106,7 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
             startupSources: startupSources,
             linkDirectories: userOptions?.LinkDirectoriesOverride ?? [],
             linkedLibraries: userOptions?.LinkedLibrariesOverride ?? [],
+            outputArtifacts: outputArtifacts,
             toolchainKind: userOptions?.ToolchainKindOverride ?? "gcc-arm-none-eabi",
             supportedBuildTypes: userOptions?.SupportedBuildTypesOverride ?? ["Debug", "Release"],
             presetGenerator: userOptions?.PresetGeneratorOverride ?? "Ninja",
@@ -324,15 +327,15 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
 
     private static IReadOnlyList<string> ResolveMcuFlags(string? chipMacro)
     {
-        var options = new List<string> { "-mcpu=cortex-m4", "-mthumb" };
-
-        if (chipMacro?.StartsWith("STM32G4", StringComparison.OrdinalIgnoreCase) == true)
+        foreach (var profile in ArchitectureProfiles)
         {
-            options.Add("-mfpu=fpv4-sp-d16");
-            options.Add("-mfloat-abi=hard");
+            if (chipMacro?.StartsWith(profile.ChipPrefix, StringComparison.OrdinalIgnoreCase) == true)
+            {
+                return profile.Flags;
+            }
         }
 
-        return SortDistinct(options);
+        return ["-mthumb"];
     }
 
     private static IReadOnlyList<string> ResolveLinkOptions(UserProjectOptions? userOptions)
@@ -380,7 +383,7 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
             .GroupBy(value => value, StringComparer.OrdinalIgnoreCase)
             .Select(group => new
             {
-                Macro = CanonicalizeChipMacro(group.Key),
+                Macro = group.Key,
                 Frequency = group.Count()
             })
             .OrderByDescending(entry => entry.Frequency)
@@ -394,15 +397,29 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
     private static string? TryExtractChipMacro(string path)
     {
         var match = ChipTokenRegex.Match(path);
-        return match.Success ? match.Value : null;
+        if (!match.Success)
+        {
+            return null;
+        }
+
+        return TryMapTokenToDeviceMacro(match.Value);
     }
 
-    private static string CanonicalizeChipMacro(string value)
+    private static string? TryMapTokenToDeviceMacro(string value)
     {
         var normalized = value.Trim().ToUpperInvariant();
-        return normalized.EndsWith("XX", StringComparison.Ordinal)
-            ? $"{normalized[..^2]}xx"
-            : normalized;
+        if (!normalized.StartsWith("STM32", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (!ConcreteChipRegex.IsMatch(normalized))
+        {
+            return null;
+        }
+
+        var familyAndSeries = normalized[5..9];
+        return $"STM32{familyAndSeries}xx";
     }
 
     private static int GetChipSpecificityScore(string chipMacro)
@@ -427,6 +444,30 @@ public sealed class Stm32ProjectAnalyzer : IProjectAnalyzer
 
         return score;
     }
+
+    private static IReadOnlyList<string> ResolveOutputArtifacts(UserProjectOptions? userOptions)
+    {
+        var artifacts = new List<string> { "elf", "hex" };
+
+        if (userOptions?.GenerateBinArtifactOverride == true)
+        {
+            artifacts.Add("bin");
+        }
+
+        if (userOptions?.GenerateMapArtifactOverride == true)
+        {
+            artifacts.Add("map");
+        }
+
+        return artifacts;
+    }
+
+    private static readonly ArchitectureProfile[] ArchitectureProfiles =
+    [
+        new("STM32G4", ["-mcpu=cortex-m4", "-mthumb", "-mfpu=fpv4-sp-d16", "-mfloat-abi=hard"])
+    ];
+
+    private sealed record ArchitectureProfile(string ChipPrefix, IReadOnlyList<string> Flags);
 
     private static string? InferPlatformFamily(string? chipMacro)
     {

@@ -24,6 +24,7 @@ public sealed class ProjectModel
         IReadOnlyList<string>? startupSources = null,
         IReadOnlyList<string>? linkDirectories = null,
         IReadOnlyList<string>? linkedLibraries = null,
+        IReadOnlyList<string>? outputArtifacts = null,
         string? toolchainKind = null,
         IReadOnlyList<string>? supportedBuildTypes = null,
         string? presetGenerator = null,
@@ -52,6 +53,7 @@ public sealed class ProjectModel
         CompileOptions = compileOptions ?? [];
         LinkOptions = linkOptions ?? [];
         LinkedLibraries = linkedLibraries ?? [];
+        OutputArtifacts = outputArtifacts ?? ["elf", "hex"];
 
         ToolchainFile = toolchainFile;
         ToolchainKind = toolchainKind;
@@ -109,6 +111,8 @@ public sealed class ProjectModel
     public IReadOnlyList<string> LinkOptions { get; }
 
     public IReadOnlyList<string> LinkedLibraries { get; }
+
+    public IReadOnlyList<string> OutputArtifacts { get; }
 
     public string? ToolchainFile { get; }
 

@@ -32,6 +32,10 @@ public sealed class UserProjectOptions
 
     public IReadOnlyList<string>? LinkedLibrariesOverride { get; init; }
 
+    public bool? GenerateBinArtifactOverride { get; init; }
+
+    public bool? GenerateMapArtifactOverride { get; init; }
+
     public IReadOnlyList<string>? SupportedBuildTypesOverride { get; init; }
 
     public string? PresetGeneratorOverride { get; init; }

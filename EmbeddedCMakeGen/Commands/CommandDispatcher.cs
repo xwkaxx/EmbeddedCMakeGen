@@ -61,6 +61,10 @@ public sealed class CommandDispatcher
             logger.Info($"Mode: {(command.CommandName == CommandName.Preview ? "preview" : "generate")}");
             logger.Info($"Selected startup: {projectModel.SelectedStartupFile ?? "(none)"}");
             logger.Info($"Selected linker: {projectModel.SelectedLinkerScript ?? "(none)"}");
+            if (projectModel.PlatformKind == PlatformKind.Stm32 && string.IsNullOrWhiteSpace(projectModel.ChipMacro))
+            {
+                logger.Warn("STM32 device macro could not be inferred confidently. Provide --chip <STM32xxxxxx> to avoid compile-definition gaps.");
+            }
             logger.Info($"Items app/driver/middleware/include: {projectModel.ApplicationSources.Count}/{projectModel.DriverSources.Count}/{projectModel.MiddlewareSources.Count}/{projectModel.IncludeDirectories.Count}");
 
             writer.WriteFiles(
@@ -110,7 +114,9 @@ public sealed class CommandDispatcher
             TargetNameOverride = command.TargetName,
             LinkerScriptPath = command.Linker,
             StartupFilePath = command.Startup,
-            ChipMacroOverride = command.Chip
+            ChipMacroOverride = command.Chip,
+            GenerateBinArtifactOverride = command.GenerateBinArtifact,
+            GenerateMapArtifactOverride = command.GenerateMapArtifact
         };
     }
 
@@ -160,9 +166,11 @@ public sealed class CommandDispatcher
         string? Chip,
         string? Startup,
         string? Linker,
+        bool GenerateBinArtifact,
+        bool GenerateMapArtifact,
         bool CreateBackup)
     {
-        public const string UsageText = "Usage: EmbeddedCMakeGen <scan|preview|generate> --root <projectRoot> [--out <outputDir>] [--project-name <name>] [--target-name <name>] [--platform <stm32|generic>] [--chip <chipId>] [--startup <path>] [--linker <path>] [--backup] [--help]";
+        public const string UsageText = "Usage: EmbeddedCMakeGen <scan|preview|generate> --root <projectRoot> [--out <outputDir>] [--project-name <name>] [--target-name <name>] [--platform <stm32|generic>] [--chip <chipId>] [--startup <path>] [--linker <path>] [--bin] [--map] [--backup] [--help]";
 
         public static ParsedCommand Parse(string[] args)
         {
@@ -193,6 +201,8 @@ public sealed class CommandDispatcher
             string? chip = null;
             string? startup = null;
             string? linker = null;
+            var generateBin = false;
+            var generateMap = false;
             var createBackup = false;
 
             for (var i = 1; i < args.Length; i++)
@@ -228,6 +238,12 @@ public sealed class CommandDispatcher
                     case "--backup":
                         createBackup = true;
                         break;
+                    case "--bin":
+                        generateBin = true;
+                        break;
+                    case "--map":
+                        generateMap = true;
+                        break;
                     default:
                         return Invalid($"Unknown or incomplete argument: {arg}");
                 }
@@ -250,6 +266,8 @@ public sealed class CommandDispatcher
                 Chip: chip,
                 Startup: startup,
                 Linker: linker,
+                GenerateBinArtifact: generateBin,
+                GenerateMapArtifact: generateMap,
                 CreateBackup: createBackup);
         }
 
@@ -267,6 +285,8 @@ public sealed class CommandDispatcher
                 Chip: null,
                 Startup: null,
                 Linker: null,
+                GenerateBinArtifact: false,
+                GenerateMapArtifact: false,
                 CreateBackup: false);
         }
     }

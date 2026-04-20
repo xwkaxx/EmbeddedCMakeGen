@@ -68,7 +68,8 @@ public sealed class GenericEmbeddedCAnalyzer : IProjectAnalyzer
             supportedBuildTypes: userOptions?.SupportedBuildTypesOverride ?? ["Debug", "Release"],
             presetGenerator: userOptions?.PresetGeneratorOverride ?? "Ninja",
             linkDirectories: userOptions?.LinkDirectoriesOverride ?? [],
-            linkedLibraries: userOptions?.LinkedLibrariesOverride ?? []);
+            linkedLibraries: userOptions?.LinkedLibrariesOverride ?? [],
+            outputArtifacts: ResolveOutputArtifacts(userOptions));
     }
 
     private static IReadOnlyList<string> ResolveStartupSources(ScanResult scanResult, UserProjectOptions? userOptions)
@@ -109,5 +110,22 @@ public sealed class GenericEmbeddedCAnalyzer : IProjectAnalyzer
         }
 
         return userOptions?.TreatWarningsAsErrors == true ? ["-Werror"] : [];
+    }
+
+    private static IReadOnlyList<string> ResolveOutputArtifacts(UserProjectOptions? userOptions)
+    {
+        var artifacts = new List<string> { "elf", "hex" };
+
+        if (userOptions?.GenerateBinArtifactOverride == true)
+        {
+            artifacts.Add("bin");
+        }
+
+        if (userOptions?.GenerateMapArtifactOverride == true)
+        {
+            artifacts.Add("map");
+        }
+
+        return artifacts;
     }
 }
